@@ -1,0 +1,96 @@
+// Tennessen et al. (2012) model w/o recent accelerated population growth
+
+
+initialize() {
+	setSeed(d_seed);
+	initializeMutationRate(d_mu);
+	initializeMutationType("m1", 0.5, "f", 0.0);		// Neutral varaints
+	initializeMutationType("m2", 0.5, "f", 0.0); 	// Neandertal variants
+	m2.convertToSubstitution = F ; 						// Don't convert to substitutions
+	initializeMutationType("m3", 0.1, "f", d_selec);  // Include a weakly deleterious mutation,
+							// dominance coefficient is low, so hets see alsmot no effect
+							// fix ("f") the selection coefficient for these mutations at -0.03
+	//initializeMutationType("m3", 0.1, "g", d_selec_mu, d_selec_alpha); //gamma distribution ("g") w/ mean of -0.03 (deleterious) and shape parameter (alpha) of 0.2
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, (d_len-1)); // 100kb
+	initializeRecombinationRate(d_recomb);
+}
+
+// Create the ancestral African population 1,450kya
+1 { sim.addSubpop("p1", 7310); }
+
+// Split ModernHuman and Neandertal at 700kya
+30000 late() { 
+	sim.addSubpopSplit("p4", 1000, p1);		// create Neandertal population
+}
+
+// Expand the African population to 14474
+// This occurs at 148kya
+52080 { p1.setSubpopulationSize(14474); }
+
+// Split non-Africans from Africans and set up migration between them 
+// This occurs at 100kya
+54000 {
+	sim.addSubpopSplit("p2", 1861, p1);
+	p1.setMigrationRates(c(p2), c(15e-5));
+	p2.setMigrationRates(c(p1), c(15e-5));
+}
+
+// To the Neandertal population, add a tagging mutation at every site of the chromosome
+55799 late() {
+	g = p4.genomes;
+	draws = runif(d_len);
+	add_m2 = (draws <= d_prob);
+	g.addNewDrawnMutation(m2, which(add_m2));
+	g.addNewDrawnMutation(m3, asInteger(d_len/2));
+	//g.addNewDrawnMutation(m3, which(!add_m2));	
+}
+
+// Single event of Neandertal admixture with non-Afr ; 0.2%/gen for 10 gen --> 2%
+// This occurs at 55kya
+//55800 late() { p2.setMigrationRates(p4, d_mig); }
+55800 { p2.setMigrationRates(p4, d_mig); }
+55810 late() { p2.setMigrationRates(p4, 0.0); }
+
+// Reduce Neand pop size to make sim run faster
+55811 { 
+	p4.setSubpopulationSize(0);
+}
+
+// Split p2 into European and East Asian subpopulations 
+// This occurs at 23kya
+57080 {
+	sim.addSubpopSplit("p3", 554, p2); // create East Asian population
+	p2.setSubpopulationSize(1032); // reduce European size
+	// Set migration rates for the rest of the simulation
+	p1.setMigrationRates(c(p2, p3), c(2.5e-5, 0.78e-5));
+	p2.setMigrationRates(c(p1, p3), c(2.5e-5, 3.11e-5));
+	p3.setMigrationRates(c(p1, p2), c(0.78e-5, 3.11e-5)); 
+}
+
+57080 late() {	
+	print(p2.individualCount);
+	print(p3.individualCount); 
+}
+
+
+//Set up exponential growth in Europe and East Asia
+//Where N(0) is the base subpopulation size and t = gen - 57080:
+//N(Europe) should be int(round(N(0) * e^(0.0038*t))) 
+//N(East Asia) should be int(round(N(0) * e^(0.0048*t)))
+57080:58000 {
+	t = sim.generation - 57080;
+	p2_size = round(1032 * exp(0.0031 * t));
+	p3_size = round(554 * exp(0.0048 * t));
+	p2.setSubpopulationSize(asInteger(p2_size));
+	p3.setSubpopulationSize(asInteger(p3_size));
+}
+
+
+// Generation 58000 is the present. Output and terminate.
+58000 late() {
+	print(p2.individualCount);
+	print(p3.individualCount);
+	p2.outputSample(d_sampleP2, replace=F, filePath=d_outfileP2);
+	p3.outputSample(d_sampleP3, replace=F, filePath=d_outfileP3);
+}
